@@ -1,0 +1,27 @@
+{
+  "name": "awaz-backend",
+  "version": "1.0.0",
+  "description": "Awaz (آواز) — Production-ready Node.js backend for real-time voice translation",
+  "main": "server/server.js",
+  "scripts": {
+    "start":   "node server/server.js",
+    "dev":     "nodemon server/server.js",
+    "lint":    "eslint server/**/*.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "cors":                "^2.8.5",
+    "dotenv":              "^16.4.5",
+    "express":             "^4.19.2",
+    "express-rate-limit":  "^7.3.1",
+    "helmet":              "^7.1.0",
+    "ws":                  "^8.17.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "keywords": ["translation", "voice", "real-time", "express", "websocket", "awaz"],
+  "license": "MIT"
+}

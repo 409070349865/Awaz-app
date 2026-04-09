@@ -1,0 +1,1856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Awaz — Real-Time Voice Translator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ─── CSS VARIABLES & RESET ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #080c14;
+      --surface:  #0d1322;
+      --glass:    rgba(255,255,255,0.04);
+      --glass-b:  rgba(255,255,255,0.08);
+      --border:   rgba(255,255,255,0.07);
+      --accent:   #00e5ff;
+      --accent2:  #7b61ff;
+      --accent3:  #ff6b6b;
+      --text:     #e8edf5;
+      --muted:    #5a6580;
+      --muted2:   #8a96b0;
+      --green:    #00ffa3;
+      --radius:   16px;
+      --radius-sm:8px;
+      --trans:    0.25s cubic-bezier(.4,0,.2,1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      background-image:
+        radial-gradient(ellipse 80% 60% at 10% 0%,  rgba(0,229,255,0.07)  0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 90% 100%, rgba(123,97,255,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 50% 50%,  rgba(0,255,163,0.03)  0%, transparent 70%);
+    }
+
+    /* grain overlay */
+    body::before {     
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0; opacity: 0.5;
+    }
+
+    /* ─── LAYOUT ──────────────────────────────────────────────────────────── */
+    .app-wrapper {
+      position: relative; z-index: 1;
+      max-width: 1280px; margin: 0 auto; padding: 0 24px 60px;
+    }
+
+    /* ─── HEADER ──────────────────────────────────────────────────────────── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 28px 0 20px; border-bottom: 1px solid var(--border);
+    }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo-icon {
+      width: 42px; height: 42px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 12px; display: flex; align-items: center;
+      justify-content: center; font-size: 22px;
+    }
+    .logo-text {
+      font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.55rem;
+      letter-spacing: -0.5px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .logo-urdu {
+      font-size: 0.78rem; color: var(--muted2); letter-spacing: 1px;
+      margin-top: 1px; font-style: italic;
+    }
+    .logo-sub {
+      font-size: 0.6rem; color: var(--muted); letter-spacing: 2px;
+      text-transform: uppercase; margin-top: 2px;
+    }
+
+    /* Status pill */
+    .status-pill {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 16px; background: var(--glass); border: 1px solid var(--border);
+      border-radius: 100px; font-size: 0.72rem; color: var(--muted2);
+      letter-spacing: 0.5px; transition: var(--trans);
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: var(--trans);
+    }
+    .status-pill.listening  .status-dot { background: var(--accent);  box-shadow: 0 0 8px var(--accent);  animation: blink 1s infinite; }
+    .status-pill.processing .status-dot { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); animation: blink 0.6s infinite; }
+    .status-pill.ready      .status-dot { background: var(--green);   box-shadow: 0 0 8px var(--green); }
+    .status-pill.speaking   .status-dot { background: #ffb347;        box-shadow: 0 0 8px #ffb347; animation: blink 0.8s infinite; }
+    .status-pill.error      .status-dot { background: var(--accent3); box-shadow: 0 0 8px var(--accent3); }
+    .status-pill.listening  { border-color: rgba(0,229,255,0.25);  color: var(--accent); }
+    .status-pill.processing { border-color: rgba(123,97,255,0.25); color: var(--accent2); }
+    .status-pill.ready      { border-color: rgba(0,255,163,0.25);  color: var(--green); }
+    .status-pill.speaking   { border-color: rgba(255,179,71,0.3);  color: #ffb347; }
+    .status-pill.error      { border-color: rgba(255,107,107,0.25);color: var(--accent3); }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+    /* ─── LANGUAGE BAR ────────────────────────────────────────────────────── */
+    .lang-bar {
+      display: flex; align-items: center; gap: 12px; margin: 28px 0; flex-wrap: wrap;
+    }
+    .lang-group {
+      display: flex; align-items: center; gap: 10px; flex: 1; min-width: 220px;
+    }
+    .lang-label {
+      font-size: 0.65rem; letter-spacing: 2px; color: var(--muted);
+      text-transform: uppercase; white-space: nowrap;
+    }
+
+    /* Custom language selector wrapper — shows a flag before the dropdown */
+    .lang-select-wrap {
+      flex: 1; position: relative; display: flex; align-items: center;
+    }
+    .lang-flag-preview {
+      position: absolute; left: 12px; font-size: 1.1rem;
+      pointer-events: none; z-index: 2; line-height: 1;
+    }
+    select {
+      flex: 1; appearance: none;
+      background: var(--glass); border: 1px solid var(--border);
+      color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.82rem;
+      padding: 10px 36px 10px 42px; /* left pad for flag */
+      border-radius: var(--radius-sm); cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235a6580' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center;
+      transition: var(--trans); width: 100%;
+    }
+    select:hover, select:focus {
+      border-color: rgba(0,229,255,0.3); outline: none; background-color: var(--glass-b);
+    }
+    select option { background: #0d1322; }
+
+    /* Swap button */
+    .swap-btn {
+      width: 42px; height: 42px; background: var(--glass);
+      border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted2); font-size: 16px; transition: var(--trans); flex-shrink: 0;
+    }
+    .swap-btn:hover { border-color: rgba(0,229,255,0.35); color: var(--accent); transform: rotate(180deg); }
+
+    /* ─── MAIN GRID ───────────────────────────────────────────────────────── */
+    .main-grid {
+      display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px; align-items: start;
+    }
+    @media (max-width: 900px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .divider-col { display: none; }
+    }
+
+    /* Panel */
+    .panel {
+      background: var(--glass); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+    }
+    .panel-title {
+      font-family: 'Syne', sans-serif; font-size: 0.75rem; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase; color: var(--muted2);
+    }
+    /* Badge now holds flag + code */
+    .panel-badge {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 0.6rem; padding: 3px 10px;
+      border-radius: 100px; letter-spacing: 1px; text-transform: uppercase;
+    }
+    .panel-badge .badge-flag { font-size: 1rem; line-height: 1; }
+    .badge-cyan   { background: rgba(0,229,255,0.1);  color: var(--accent);  border: 1px solid rgba(0,229,255,0.2); }
+    .badge-purple { background: rgba(123,97,255,0.1); color: var(--accent2); border: 1px solid rgba(123,97,255,0.2); }
+
+    /* Message area */
+    .message-area {
+      height: 320px; overflow-y: auto; padding: 18px;
+      display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth;
+    }
+    .message-area::-webkit-scrollbar { width: 4px; }
+    .message-area::-webkit-scrollbar-track { background: transparent; }
+    .message-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .empty-state {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; color: var(--muted); font-size: 0.78rem;
+      gap: 10px; text-align: center; opacity: 0.7;
+    }
+    .empty-state .icon { font-size: 2rem; opacity: 0.4; }
+
+    .msg-bubble {
+      background: var(--glass-b); border: 1px solid var(--border);
+      border-radius: 12px 12px 12px 4px; padding: 12px 16px;
+      font-size: 0.88rem; line-height: 1.6; animation: slideUp 0.3s ease;
+    }
+    .msg-bubble.interim { opacity: 0.55; border-style: dashed; font-style: italic; }
+    .msg-bubble.translated {
+      border-radius: 12px 12px 4px 12px;
+      border-color: rgba(123,97,255,0.2); background: rgba(123,97,255,0.06);
+    }
+    .msg-time { font-size: 0.58rem; color: var(--muted); margin-top: 6px; letter-spacing: 0.5px; }
+
+    @keyframes slideUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+    /* Processing row */
+    .processing-row {
+      display: none; align-items: center; gap: 10px; padding: 10px 18px;
+      border-top: 1px solid var(--border); font-size: 0.72rem; color: var(--accent2);
+    }
+    .processing-row.visible { display: flex; }
+    .spin {
+      width: 14px; height: 14px; border: 2px solid rgba(123,97,255,0.2);
+      border-top-color: var(--accent2); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    /* ─── CENTER: MIC + WAVEFORMS ─────────────────────────────────────────── */
+    .divider-col {
+      display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 50px;
+    }
+
+    /* ── MIC INPUT WAVEFORM (listening) ── */
+    .waveform {
+      display: flex; align-items: center; gap: 3px; height: 36px;
+    }
+    .waveform .bar {
+      width: 3px; background: var(--accent); border-radius: 2px; height: 4px; opacity: 0.3;
+    }
+    .waveform.active .bar { opacity: 1; animation: waveAnim 0.8s ease-in-out infinite; }
+    .waveform.active .bar:nth-child(1){animation-delay:0.00s}
+    .waveform.active .bar:nth-child(2){animation-delay:0.10s}
+    .waveform.active .bar:nth-child(3){animation-delay:0.20s}
+    .waveform.active .bar:nth-child(4){animation-delay:0.30s}
+    .waveform.active .bar:nth-child(5){animation-delay:0.15s}
+    .waveform.active .bar:nth-child(6){animation-delay:0.05s}
+    .waveform.active .bar:nth-child(7){animation-delay:0.25s}
+    @keyframes waveAnim { 0%,100%{height:4px} 50%{height:28px} }
+
+    /* ── MIC BUTTON ── */
+    .mic-wrap {
+      position: relative; display: flex; align-items: center; justify-content: center;
+    }
+    .ripple {
+      position: absolute; border-radius: 50%; border: 1.5px solid var(--accent);
+      opacity: 0; pointer-events: none;
+    }
+    .ripple-1{width:100px;height:100px}
+    .ripple-2{width:130px;height:130px}
+    .ripple-3{width:160px;height:160px}
+    .mic-wrap.active .ripple { animation: rippleOut 2s ease-out infinite; }
+    .mic-wrap.active .ripple-2{animation-delay:0.5s}
+    .mic-wrap.active .ripple-3{animation-delay:1.0s}
+    @keyframes rippleOut { from{opacity:0.5;transform:scale(0.85)} to{opacity:0;transform:scale(1.15)} }
+
+    .mic-btn {
+      position: relative; z-index: 2; width: 80px; height: 80px; border-radius: 50%;
+      border: 2px solid var(--border); cursor: pointer;
+      display: flex; align-items: center; justify-content: center; font-size: 28px;
+      background: linear-gradient(135deg,#1a2540,#0d1322); color: var(--muted2);
+      transition: all 0.3s cubic-bezier(.4,0,.2,1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .mic-btn:hover {
+      border-color: rgba(0,229,255,0.4); color: var(--accent);
+      box-shadow: 0 0 32px rgba(0,229,255,0.15), 0 4px 24px rgba(0,0,0,0.4); transform: scale(1.05);
+    }
+    .mic-btn.active {
+      background: linear-gradient(135deg,rgba(0,229,255,0.15),rgba(123,97,255,0.12));
+      border-color: var(--accent); color: var(--accent);
+      box-shadow: 0 0 40px rgba(0,229,255,0.25), 0 4px 24px rgba(0,0,0,0.4);
+    }
+    .mic-label {
+      font-size: 0.6rem; letter-spacing: 2px; color: var(--muted);
+      text-transform: uppercase; text-align: center;
+    }
+
+    /* ── TTS SPEAKING WAVEFORM (output) ──────────────────────────────────── */
+    /*
+     * Shown in the center column while the browser reads out the translation.
+     * Uses a canvas-style bar animation in amber/orange to visually distinguish
+     * it from the cyan mic-input waveform above.
+     */
+    .tts-wave-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      opacity: 0; transition: opacity 0.4s ease; pointer-events: none;
+    }
+    .tts-wave-wrap.visible { opacity: 1; }
+
+    .tts-wave-label {
+      font-size: 0.55rem; letter-spacing: 2px; text-transform: uppercase;
+      color: #ffb347; opacity: 0.8;
+    }
+
+    .tts-waveform {
+      display: flex; align-items: center; gap: 2px; height: 40px;
+    }
+    .tts-waveform .tbar {
+      width: 3px; background: linear-gradient(180deg,#ffb347,#ff6b6b);
+      border-radius: 2px; height: 4px; opacity: 0.25;
+    }
+    .tts-wave-wrap.visible .tts-waveform .tbar {
+      opacity: 1; animation: ttsPulse 0.7s ease-in-out infinite;
+    }
+    /* stagger 14 bars */
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(1) {animation-delay:0.00s;animation-duration:0.60s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(2) {animation-delay:0.05s;animation-duration:0.70s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(3) {animation-delay:0.10s;animation-duration:0.55s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(4) {animation-delay:0.15s;animation-duration:0.80s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(5) {animation-delay:0.20s;animation-duration:0.65s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(6) {animation-delay:0.08s;animation-duration:0.72s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(7) {animation-delay:0.18s;animation-duration:0.58s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(8) {animation-delay:0.03s;animation-duration:0.85s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(9) {animation-delay:0.12s;animation-duration:0.62s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(10){animation-delay:0.22s;animation-duration:0.75s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(11){animation-delay:0.07s;animation-duration:0.68s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(12){animation-delay:0.17s;animation-duration:0.53s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(13){animation-delay:0.13s;animation-duration:0.78s}
+    .tts-wave-wrap.visible .tts-waveform .tbar:nth-child(14){animation-delay:0.02s;animation-duration:0.63s}
+
+    @keyframes ttsPulse {
+      0%,100% { height: 3px; }
+      25%      { height: 22px; }
+      50%      { height: 36px; }
+      75%      { height: 14px; }
+    }
+
+    /* ─── PLAYBACK CONTROLS ───────────────────────────────────────────────── */
+    .playback-panel { margin-top: 16px; }
+    .playback-inner { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .playback-row   { display: flex; align-items: center; gap: 12px; }
+
+    .play-btn {
+      width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--glass); color: var(--accent2); font-size: 16px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: var(--trans); flex-shrink: 0;
+    }
+    .play-btn:hover:not(:disabled) {
+      border-color: rgba(123,97,255,0.4); background: rgba(123,97,255,0.1);
+      box-shadow: 0 0 16px rgba(123,97,255,0.2);
+    }
+    .play-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .range-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .range-label { font-size: 0.62rem; color: var(--muted); white-space: nowrap; }
+    input[type=range] {
+      flex: 1; appearance: none; height: 3px; background: var(--border);
+      border-radius: 2px; outline: none; cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      appearance: none; width: 12px; height: 12px; border-radius: 50%;
+      background: var(--accent2); box-shadow: 0 0 8px rgba(123,97,255,0.5);
+      cursor: pointer; transition: var(--trans);
+    }
+    input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); background: var(--accent); }
+    .range-val { font-size: 0.62rem; color: var(--muted2); min-width: 36px; text-align: right; }
+
+    /* ─── TOAST ───────────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 28px; left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(255,107,107,0.12); border: 1px solid rgba(255,107,107,0.3);
+      color: var(--accent3); padding: 10px 20px; border-radius: 10px;
+      font-size: 0.78rem; backdrop-filter: blur(20px); opacity: 0;
+      pointer-events: none; transition: all 0.3s ease; z-index: 1000; white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+
+    /* ─── FOOTER STATS ────────────────────────────────────────────────────── */
+    .footer-stats { display: flex; gap: 16px; margin-top: 24px; flex-wrap: wrap; }
+    .stat-chip {
+      display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+      background: var(--glass); border: 1px solid var(--border);
+      border-radius: 8px; font-size: 0.68rem; color: var(--muted2);
+    }
+    .stat-chip .val { color: var(--text); font-weight: 500; }
+
+    /* ─── RESPONSIVE ──────────────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      header { flex-direction: column; align-items: flex-start; gap: 14px; }
+      .lang-bar { flex-direction: column; }
+      .lang-group { width: 100%; }
+      .footer-stats { gap: 10px; }
+    }
+
+    /* ─── SECTION NAV ─────────────────────────────────────────────────────── */
+    .section-nav {
+      display: flex; align-items: center; gap: 6px;
+      margin: 36px 0 0; padding: 6px; background: var(--glass);
+      border: 1px solid var(--border); border-radius: 14px; width: fit-content;
+    }
+    .section-nav-btn {
+      padding: 8px 20px; border-radius: 10px; border: none; background: transparent;
+      color: var(--muted2); font-family: 'Syne', sans-serif; font-size: 0.75rem;
+      font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+      cursor: pointer; transition: var(--trans);
+    }
+    .section-nav-btn:hover { color: var(--text); background: var(--glass-b); }
+    .section-nav-btn.active {
+      background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(123,97,255,0.15));
+      color: var(--accent); border: 1px solid rgba(0,229,255,0.2);
+    }
+    .section-content { display: none; }
+    .section-content.visible { display: block; }
+
+    /* ─── STATS SECTION ───────────────────────────────────────────────────── */
+    .stats-section { margin-top: 28px; }
+    .stats-section-title {
+      font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800;
+      letter-spacing: -0.3px; margin-bottom: 6px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .stats-section-sub {
+      font-size: 0.72rem; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 24px;
+    }
+    .charts-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+    }
+    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 560px) { .charts-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--glass); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      transition: var(--trans);
+    }
+    .chart-card:hover { border-color: rgba(0,229,255,0.18); transform: translateY(-2px); }
+    .chart-card-title {
+      font-family: 'Syne', sans-serif; font-size: 0.68rem; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase; color: var(--muted2);
+      margin-bottom: 4px;
+    }
+    .chart-card-sub { font-size: 0.6rem; color: var(--muted); margin-bottom: 16px; }
+    .chart-canvas-wrap { position: relative; width: 100%; }
+    canvas.chart-canvas { width: 100% !important; }
+
+    /* Stat summary row under charts */
+    .stats-summary-row {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 20px;
+    }
+    @media (max-width: 700px) { .stats-summary-row { grid-template-columns: 1fr 1fr; } }
+    .summary-card {
+      background: var(--glass); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 18px;
+    }
+    .summary-card-label { font-size: 0.6rem; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
+    .summary-card-val {
+      font-family: 'Syne', sans-serif; font-size: 1.45rem; font-weight: 800;
+      margin-top: 6px; letter-spacing: -1px;
+    }
+    .summary-card-val.cyan   { color: var(--accent); }
+    .summary-card-val.purple { color: var(--accent2); }
+    .summary-card-val.green  { color: var(--green); }
+    .summary-card-val.orange { color: #ffb347; }
+
+    /* ─── LEARN SECTION ───────────────────────────────────────────────────── */
+    .learn-section { margin-top: 28px; }
+    .learn-header { margin-bottom: 24px; }
+    .learn-header-title {
+      font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800;
+      letter-spacing: -0.3px; margin-bottom: 6px;
+      background: linear-gradient(90deg, var(--green), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .learn-header-sub { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.5px; }
+
+    /* Language picker tabs */
+    .lang-tabs {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px;
+    }
+    .lang-tab {
+      display: flex; align-items: center; gap: 7px; padding: 8px 16px;
+      background: var(--glass); border: 1px solid var(--border);
+      border-radius: 10px; cursor: pointer; transition: var(--trans);
+      font-size: 0.75rem; color: var(--muted2);
+    }
+    .lang-tab:hover { border-color: rgba(0,255,163,0.3); color: var(--text); }
+    .lang-tab.active {
+      background: rgba(0,255,163,0.08); border-color: rgba(0,255,163,0.35);
+      color: var(--green);
+    }
+    .lang-tab-flag { font-size: 1rem; line-height: 1; }
+
+    /* Learn content layout */
+    .learn-layout { display: grid; grid-template-columns: 240px 1fr; gap: 20px; }
+    @media (max-width: 800px) { .learn-layout { grid-template-columns: 1fr; } }
+
+    /* Lesson sidebar */
+    .lesson-sidebar {
+      background: var(--glass); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .lesson-sidebar-header {
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+      font-family: 'Syne', sans-serif; font-size: 0.65rem; font-weight: 700;
+      letter-spacing: 2px; text-transform: uppercase; color: var(--muted2);
+    }
+    .lesson-list { display: flex; flex-direction: column; }
+    .lesson-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: var(--trans); font-size: 0.78rem; color: var(--muted2);
+    }
+    .lesson-item:last-child { border-bottom: none; }
+    .lesson-item:hover { background: var(--glass-b); color: var(--text); }
+    .lesson-item.active { background: rgba(0,255,163,0.06); color: var(--green); border-left: 2px solid var(--green); }
+    .lesson-item-num {
+      width: 22px; height: 22px; border-radius: 6px; background: var(--glass-b);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.6rem; font-weight: 700; flex-shrink: 0; color: var(--muted);
+    }
+    .lesson-item.active .lesson-item-num { background: rgba(0,255,163,0.15); color: var(--green); }
+    .lesson-item-done { margin-left: auto; font-size: 0.7rem; color: var(--green); }
+
+    /* Lesson main area */
+    .lesson-main {
+      background: var(--glass); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .lesson-main-header {
+      padding: 18px 22px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    }
+    .lesson-main-title {
+      font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 800; color: var(--text);
+    }
+    .lesson-main-badge {
+      font-size: 0.6rem; padding: 4px 12px; border-radius: 100px;
+      background: rgba(0,255,163,0.1); color: var(--green);
+      border: 1px solid rgba(0,255,163,0.2); letter-spacing: 1px; text-transform: uppercase;
+    }
+    .lesson-body { padding: 22px; display: flex; flex-direction: column; gap: 18px; }
+
+    /* Phrase cards grid */
+    .phrase-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .phrase-grid { grid-template-columns: 1fr; } }
+    .phrase-card {
+      background: var(--glass-b); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 16px; transition: var(--trans); cursor: default;
+    }
+    .phrase-card:hover {
+      border-color: rgba(0,229,255,0.25); transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .phrase-native { font-size: 1rem; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+    .phrase-roman  { font-size: 0.7rem; color: var(--accent); margin-bottom: 5px; font-style: italic; }
+    .phrase-eng    { font-size: 0.72rem; color: var(--muted2); }
+    .phrase-speak-btn {
+      margin-top: 8px; background: transparent; border: 1px solid var(--border);
+      color: var(--muted); font-size: 0.6rem; padding: 3px 10px; border-radius: 6px;
+      cursor: pointer; transition: var(--trans); letter-spacing: 0.5px;
+    }
+    .phrase-speak-btn:hover { border-color: rgba(0,229,255,0.3); color: var(--accent); }
+
+    /* Grammar tip */
+    .grammar-tip {
+      background: rgba(123,97,255,0.06); border: 1px solid rgba(123,97,255,0.2);
+      border-radius: 12px; padding: 16px 18px;
+    }
+    .grammar-tip-label {
+      font-size: 0.58rem; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--accent2); margin-bottom: 8px; font-weight: 700;
+    }
+    .grammar-tip-text { font-size: 0.8rem; color: var(--muted2); line-height: 1.7; }
+
+    /* Progress bar */
+    .lesson-progress { display: flex; align-items: center; gap: 12px; }
+    .progress-bar-wrap { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--accent)); border-radius: 2px; transition: width 0.6s ease; }
+    .progress-pct { font-size: 0.62rem; color: var(--green); min-width: 30px; text-align: right; }
+
+    /* Nav buttons */
+    .lesson-nav { display: flex; gap: 10px; justify-content: flex-end; padding: 0 22px 22px; }
+    .lesson-nav-btn {
+      padding: 9px 20px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--glass); color: var(--muted2); font-size: 0.75rem;
+      cursor: pointer; transition: var(--trans); font-family: 'DM Mono', monospace;
+    }
+    .lesson-nav-btn:hover { border-color: rgba(0,255,163,0.35); color: var(--green); }
+    .lesson-nav-btn.primary {
+      background: rgba(0,255,163,0.1); border-color: rgba(0,255,163,0.3); color: var(--green);
+    }
+    .lesson-nav-btn.primary:hover { background: rgba(0,255,163,0.18); }
+
+    /* Quick reference table */
+    .ref-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .ref-table th {
+      text-align: left; padding: 8px 12px; font-size: 0.6rem; letter-spacing: 1.5px;
+      text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border);
+    }
+    .ref-table td { padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--muted2); }
+    .ref-table td:first-child { color: var(--text); font-weight: 500; }
+    .ref-table td.hi { color: var(--accent); }
+    .ref-table tr:last-child td { border-bottom: none; }
+    .ref-table tr:hover td { background: rgba(255,255,255,0.02); }
+  </style>
+</head>
+
+<body>
+<div class="app-wrapper">
+
+  <!-- ─── HEADER ─────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🗣️</div>
+      <div>
+        <div class="logo-text">Awaz</div>
+        <div class="logo-urdu">آواز &mdash; Voice</div>
+        <div class="logo-sub">Real-Time Voice Translator</div>
+      </div>
+    </div>
+    <div class="status-pill" id="statusPill">
+      <div class="status-dot"></div>
+      <span id="statusText">Ready</span>
+    </div>
+  </header>
+
+  <!-- ─── LANGUAGE BAR ───────────────────────────────────────────────────── -->
+  <div class="lang-bar">
+    <div class="lang-group">
+      <span class="lang-label">From</span>
+      <div class="lang-select-wrap">
+        <!-- Flag preview updated dynamically via JS -->
+        <span class="lang-flag-preview" id="srcFlagPreview">🇺🇸</span>
+        <select id="sourceLang" aria-label="Source language">
+          <option value="en-US" data-flag="🇺🇸">English (US)</option>
+          <option value="en-GB" data-flag="🇬🇧">English (UK)</option>
+          <option value="es-ES" data-flag="🇪🇸">Spanish</option>
+          <option value="fr-FR" data-flag="🇫🇷">French</option>
+          <option value="de-DE" data-flag="🇩🇪">German</option>
+          <option value="it-IT" data-flag="🇮🇹">Italian</option>
+          <option value="pt-BR" data-flag="🇧🇷">Portuguese (BR)</option>
+          <option value="pt-PT" data-flag="🇵🇹">Portuguese (PT)</option>
+          <option value="zh-CN" data-flag="🇨🇳">Chinese (Mandarin)</option>
+          <option value="ja-JP" data-flag="🇯🇵">Japanese</option>
+          <option value="ko-KR" data-flag="🇰🇷">Korean</option>
+          <option value="ar-SA" data-flag="🇸🇦">Arabic</option>
+          <option value="hi-IN" data-flag="🇮🇳">Hindi</option>
+          <option value="ru-RU" data-flag="🇷🇺">Russian</option>
+          <option value="ur-PK" data-flag="🇵🇰">Urdu</option>
+          <option value="nl-NL" data-flag="🇳🇱">Dutch</option>
+          <option value="sv-SE" data-flag="🇸🇪">Swedish</option>
+          <option value="tr-TR" data-flag="🇹🇷">Turkish</option>
+          <option value="pl-PL" data-flag="🇵🇱">Polish</option>
+          <option value="id-ID" data-flag="🇮🇩">Indonesian</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="swap-btn" id="swapBtn" title="Swap languages" aria-label="Swap languages">⇄</button>
+
+    <div class="lang-group">
+      <span class="lang-label">To</span>
+      <div class="lang-select-wrap">
+        <span class="lang-flag-preview" id="tgtFlagPreview">🇪🇸</span>
+        <select id="targetLang" aria-label="Target language">
+          <option value="es" data-flag="🇪🇸">Spanish</option>
+          <option value="en" data-flag="🇺🇸">English</option>
+          <option value="fr" data-flag="🇫🇷">French</option>
+          <option value="de" data-flag="🇩🇪">German</option>
+          <option value="it" data-flag="🇮🇹">Italian</option>
+          <option value="pt" data-flag="🇧🇷">Portuguese</option>
+          <option value="zh" data-flag="🇨🇳">Chinese</option>
+          <option value="ja" data-flag="🇯🇵">Japanese</option>
+          <option value="ko" data-flag="🇰🇷">Korean</option>
+          <option value="ar" data-flag="🇸🇦">Arabic</option>
+          <option value="hi" data-flag="🇮🇳">Hindi</option>
+          <option value="ru" data-flag="🇷🇺">Russian</option>
+          <option value="ur" data-flag="🇵🇰">Urdu</option>
+          <option value="nl" data-flag="🇳🇱">Dutch</option>
+          <option value="sv" data-flag="🇸🇪">Swedish</option>
+          <option value="tr" data-flag="🇹🇷">Turkish</option>
+          <option value="pl" data-flag="🇵🇱">Polish</option>
+          <option value="id" data-flag="🇮🇩">Indonesian</option>
+          <option value="bn" data-flag="🇧🇩">Bengali</option>
+          <option value="vi" data-flag="🇻🇳">Vietnamese</option>
+          <option value="th" data-flag="🇹🇭">Thai</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── MAIN GRID ──────────────────────────────────────────────────────── -->
+  <div class="main-grid">
+
+    <!-- LEFT: Transcript -->
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Transcription</span>
+          <span class="panel-badge badge-cyan" id="sourceLangBadge">
+            <span class="badge-flag" id="srcBadgeFlag">🇺🇸</span>
+            <span id="srcBadgeCode">EN</span>
+          </span>
+        </div>
+        <div class="message-area" id="transcriptArea">
+          <div class="empty-state" id="transcriptEmpty">
+            <div class="icon">🎙️</div>
+            <div>Press the mic button to start speaking.<br/>Your words will appear here.</div>
+          </div>
+        </div>
+        <div class="processing-row" id="transcriptProcessing">
+          <div class="spin"></div>Recognizing speech…
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: Mic + waveforms -->
+    <div class="divider-col">
+
+      <!-- Input waveform (mic active) -->
+      <div class="waveform" id="waveform" aria-hidden="true">
+        <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        <div class="bar"></div>
+      </div>
+
+      <!-- Mic button with ripple -->
+      <div class="mic-wrap" id="micWrap">
+        <div class="ripple ripple-1"></div>
+        <div class="ripple ripple-2"></div>
+        <div class="ripple ripple-3"></div>
+        <button class="mic-btn" id="micBtn" aria-label="Start/stop recording">🎤</button>
+      </div>
+      <div class="mic-label" id="micLabel">Tap to speak</div>
+
+      <!-- TTS speaking waveform (shown while audio plays back) -->
+      <div class="tts-wave-wrap" id="ttsWaveWrap" aria-hidden="true">
+        <div class="tts-waveform">
+          <div class="tbar"></div><div class="tbar"></div><div class="tbar"></div>
+          <div class="tbar"></div><div class="tbar"></div><div class="tbar"></div>
+          <div class="tbar"></div><div class="tbar"></div><div class="tbar"></div>
+          <div class="tbar"></div><div class="tbar"></div><div class="tbar"></div>
+          <div class="tbar"></div><div class="tbar"></div>
+        </div>
+        <div class="tts-wave-label">Speaking…</div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Translation -->
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Translation</span>
+          <span class="panel-badge badge-purple" id="targetLangBadge">
+            <span class="badge-flag" id="tgtBadgeFlag">🇪🇸</span>
+            <span id="tgtBadgeCode">ES</span>
+          </span>
+        </div>
+        <div class="message-area" id="translationArea">
+          <div class="empty-state" id="translationEmpty">
+            <div class="icon">💬</div>
+            <div>Translations will appear here<br/>after you speak.</div>
+          </div>
+        </div>
+        <div class="processing-row" id="translationProcessing">
+          <div class="spin"></div>Translating…
+        </div>
+      </div>
+
+      <!-- Playback controls -->
+      <div class="panel playback-panel">
+        <div class="panel-header">
+          <span class="panel-title">Audio Playback</span>
+        </div>
+        <div class="playback-inner">
+          <div class="playback-row">
+            <button class="play-btn" id="playBtn" disabled title="Play translation" aria-label="Play translation">▶</button>
+            <button class="play-btn" id="stopBtn" disabled title="Stop playback"    aria-label="Stop playback">■</button>
+          </div>
+          <div class="range-wrap">
+            <span class="range-label">🔊 Vol</span>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
+            <span class="range-val" id="volVal">100%</span>
+          </div>
+          <div class="range-wrap">
+            <span class="range-label">⚡ Speed</span>
+            <input type="range" id="speedSlider" min="0.5" max="2" step="0.1" value="1" aria-label="Playback speed" />
+            <span class="range-val" id="speedVal">1.0×</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-grid -->
+
+  <!-- Footer stats -->
+  <div class="footer-stats">
+    <div class="stat-chip">Sessions: <span class="val" id="statSessions">0</span></div>
+    <div class="stat-chip">Words spoken: <span class="val" id="statWords">0</span></div>
+    <div class="stat-chip">Avg latency: <span class="val" id="statLatency">—</span></div>
+    <div class="stat-chip">Engine: <span class="val">Web Speech API</span></div>
+  </div>
+
+  <!-- ─── SECTION NAV ───────────────────────────────────────────────────────── -->
+  <div class="section-nav" style="margin-top:40px;">
+    <button class="section-nav-btn active" onclick="showSection('stats')">📊 Stats</button>
+    <button class="section-nav-btn" onclick="showSection('learn')">🎓 Learn</button>
+  </div>
+
+  <!-- ─── STATS SECTION ──────────────────────────────────────────────────────── -->
+  <div class="section-content stats-section visible" id="section-stats">
+    <div style="margin-top:28px;">
+      <div class="stats-section-title">Translation Analytics</div>
+      <div class="stats-section-sub">Real-time charts based on your translation activity</div>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="stats-summary-row">
+      <div class="summary-card">
+        <div class="summary-card-label">Total Sessions</div>
+        <div class="summary-card-val cyan" id="sc-sessions">0</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-label">Words Translated</div>
+        <div class="summary-card-val purple" id="sc-words">0</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-label">Avg Latency</div>
+        <div class="summary-card-val green" id="sc-latency">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-label">Top Language</div>
+        <div class="summary-card-val orange" id="sc-toplang">—</div>
+      </div>
+    </div>
+
+    <!-- Charts grid -->
+    <div class="charts-grid" style="margin-top:20px;">
+
+      <!-- Bar chart: Words per session -->
+      <div class="chart-card">
+        <div class="chart-card-title">Words per Session</div>
+        <div class="chart-card-sub">Bar chart — spoken words each session</div>
+        <div class="chart-canvas-wrap"><canvas class="chart-canvas" id="barChart" height="180"></canvas></div>
+      </div>
+
+      <!-- Pie chart: Language usage -->
+      <div class="chart-card">
+        <div class="chart-card-title">Target Language Usage</div>
+        <div class="chart-card-sub">Pie chart — languages translated to</div>
+        <div class="chart-canvas-wrap"><canvas class="chart-canvas" id="pieChart" height="180"></canvas></div>
+      </div>
+
+      <!-- Scatter: Latency over time -->
+      <div class="chart-card">
+        <div class="chart-card-title">Latency Over Time</div>
+        <div class="chart-card-sub">Scatter plot — translation response times (ms)</div>
+        <div class="chart-canvas-wrap"><canvas class="chart-canvas" id="scatterChart" height="180"></canvas></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── LEARN SECTION ──────────────────────────────────────────────────────── -->
+  <div class="section-content learn-section" id="section-learn">
+    <div class="learn-header">
+      <div class="learn-header-title">Language Learning Hub</div>
+      <div class="learn-header-sub">Pick a language and start with structured basics — greetings, phrases, grammar tips</div>
+    </div>
+
+    <!-- Language tabs -->
+    <div class="lang-tabs" id="learnLangTabs">
+      <div class="lang-tab active" data-lang="es" onclick="selectLearnLang(this)"><span class="lang-tab-flag">🇪🇸</span> Spanish</div>
+      <div class="lang-tab" data-lang="fr" onclick="selectLearnLang(this)"><span class="lang-tab-flag">🇫🇷</span> French</div>
+      <div class="lang-tab" data-lang="de" onclick="selectLearnLang(this)"><span class="lang-tab-flag">🇩🇪</span> German</div>
+      <div class="lang-tab" data-lang="ja" onclick="selectLearnLang(this)"><span class="lang-tab-flag">🇯🇵</span> Japanese</div>
+      <div class="lang-tab" data-lang="zh" onclick="selectLearnLang(this)"><span class="lang-tab-flag">🇨🇳</span> Chinese</div>
+      <div class="lang-tab" data-lang="ar" onclick="selectLearnLang(this)"><span class="lang-tab-flag">🇸🇦</span> Arabic</div>
+      <div class="lang-tab" data-lang="hi" onclick="selectLearnLang(this)"><span class="lang-tab-flag">🇮🇳</span> Hindi</div>
+      <div class="lang-tab" data-lang="ur" onclick="selectLearnLang(this)"><span class="lang-tab-flag">🇵🇰</span> Urdu</div>
+    </div>
+
+    <!-- Learn layout: sidebar + main -->
+    <div class="learn-layout">
+
+      <!-- Sidebar: lesson list -->
+      <div class="lesson-sidebar">
+        <div class="lesson-sidebar-header">Lessons</div>
+        <div class="lesson-list" id="lessonList"></div>
+      </div>
+
+      <!-- Main lesson area -->
+      <div class="lesson-main">
+        <div class="lesson-main-header">
+          <div class="lesson-main-title" id="lessonTitle">Greetings &amp; Basics</div>
+          <div class="lesson-main-badge" id="lessonLevel">Beginner</div>
+        </div>
+        <div class="lesson-body" id="lessonBody">
+          <!-- populated by JS -->
+        </div>
+        <div class="lesson-nav">
+          <button class="lesson-nav-btn" id="prevLessonBtn" onclick="navigateLesson(-1)">← Prev</button>
+          <button class="lesson-nav-btn primary" id="nextLessonBtn" onclick="navigateLesson(1)">Next →</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /app-wrapper -->
+
+<div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+<!-- ─── JAVASCRIPT ──────────────────────────────────────────────────────────
+  Architecture:
+    1. LANG_META       — maps language codes → { flag, name }
+    2. syncBadges()    — keeps flags/codes in header badges in sync
+    3. SpeechRecognition — live transcription with interim bubbles
+    4. triggerTranslation() — POST to backend; mock fallback if offline
+    5. speakText()     — SpeechSynthesis with TTS waveform show/hide
+    6. TTS waveform    — amber animated bars shown only while speaking
+──────────────────────────────────────────────────────────────────────────── -->
+<script>
+// ── LANGUAGE META-DATA (flag + display name) ─────────────────────────────────
+// Keyed by the BASE language code (e.g. "en", "es", "zh")
+const LANG_META = {
+  'en': { flag: '🇺🇸', name: 'English'    },
+  'es': { flag: '🇪🇸', name: 'Spanish'    },
+  'fr': { flag: '🇫🇷', name: 'French'     },
+  'de': { flag: '🇩🇪', name: 'German'     },
+  'it': { flag: '🇮🇹', name: 'Italian'    },
+  'pt': { flag: '🇧🇷', name: 'Portuguese' },
+  'zh': { flag: '🇨🇳', name: 'Chinese'    },
+  'ja': { flag: '🇯🇵', name: 'Japanese'   },
+  'ko': { flag: '🇰🇷', name: 'Korean'     },
+  'ar': { flag: '🇸🇦', name: 'Arabic'     },
+  'hi': { flag: '🇮🇳', name: 'Hindi'      },
+  'ru': { flag: '🇷🇺', name: 'Russian'    },
+  'ur': { flag: '🇵🇰', name: 'Urdu'       },
+  'nl': { flag: '🇳🇱', name: 'Dutch'      },
+  'sv': { flag: '🇸🇪', name: 'Swedish'    },
+  'tr': { flag: '🇹🇷', name: 'Turkish'    },
+  'pl': { flag: '🇵🇱', name: 'Polish'     },
+  'id': { flag: '🇮🇩', name: 'Indonesian' },
+  'bn': { flag: '🇧🇩', name: 'Bengali'    },
+  'vi': { flag: '🇻🇳', name: 'Vietnamese' },
+  'th': { flag: '🇹🇭', name: 'Thai'       },
+  'en-gb': { flag: '🇬🇧', name: 'English (UK)' },
+  'pt-pt': { flag: '🇵🇹', name: 'Portuguese (PT)' },
+};
+
+// Helper: get flag from a full locale string like "en-US" or "fr-FR"
+function flagFor(code) {
+  const lower = code.toLowerCase();
+  if (LANG_META[lower]) return LANG_META[lower].flag;
+  const base = lower.split('-')[0];
+  return (LANG_META[base] && LANG_META[base].flag) || '🏳️';
+}
+
+// ── DOM REFERENCES ────────────────────────────────────────────────────────────
+const micBtn                = document.getElementById('micBtn');
+const micWrap               = document.getElementById('micWrap');
+const micLabel              = document.getElementById('micLabel');
+const waveform              = document.getElementById('waveform');
+const ttsWaveWrap           = document.getElementById('ttsWaveWrap');
+const statusPill            = document.getElementById('statusPill');
+const statusText            = document.getElementById('statusText');
+const transcriptArea        = document.getElementById('transcriptArea');
+const translationArea       = document.getElementById('translationArea');
+const transcriptProcessing  = document.getElementById('transcriptProcessing');
+const translationProcessing = document.getElementById('translationProcessing');
+const sourceLangSel         = document.getElementById('sourceLang');
+const targetLangSel         = document.getElementById('targetLang');
+const srcFlagPreview        = document.getElementById('srcFlagPreview');
+const tgtFlagPreview        = document.getElementById('tgtFlagPreview');
+const srcBadgeFlag          = document.getElementById('srcBadgeFlag');
+const srcBadgeCode          = document.getElementById('srcBadgeCode');
+const tgtBadgeFlag          = document.getElementById('tgtBadgeFlag');
+const tgtBadgeCode          = document.getElementById('tgtBadgeCode');
+const swapBtn               = document.getElementById('swapBtn');
+const playBtn               = document.getElementById('playBtn');
+const stopBtn               = document.getElementById('stopBtn');
+const volumeSlider          = document.getElementById('volumeSlider');
+const speedSlider           = document.getElementById('speedSlider');
+const volVal                = document.getElementById('volVal');
+const speedVal              = document.getElementById('speedVal');
+const toast                 = document.getElementById('toast');
+const statSessions          = document.getElementById('statSessions');
+const statWords             = document.getElementById('statWords');
+const statLatency           = document.getElementById('statLatency');
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+const state = {
+  isListening:      false,
+  recognition:      null,
+  synthesis:        window.speechSynthesis,
+  lastTranslation:  '',
+  interimMsgEl:     null,
+  sessions:         0,
+  wordCount:        0,
+  latencies:        [],
+};
+
+const BACKEND_URL = 'http://localhost:3000/translate';
+
+// ── SYNC FLAGS + BADGES ───────────────────────────────────────────────────────
+function syncBadges() {
+  const srcCode  = sourceLangSel.value;                       // e.g. "en-US"
+  const tgtCode  = targetLangSel.value;                       // e.g. "es"
+  const srcFlag  = flagFor(srcCode);
+  const tgtFlag  = flagFor(tgtCode);
+  const srcLabel = srcCode.split('-')[0].toUpperCase();
+  const tgtLabel = tgtCode.split('-')[0].toUpperCase();
+
+  // Dropdown flag previews
+  srcFlagPreview.textContent = srcFlag;
+  tgtFlagPreview.textContent = tgtFlag;
+
+  // Panel header badges
+  srcBadgeFlag.textContent = srcFlag;
+  srcBadgeCode.textContent = srcLabel;
+  tgtBadgeFlag.textContent = tgtFlag;
+  tgtBadgeCode.textContent = tgtLabel;
+}
+
+sourceLangSel.addEventListener('change', () => {
+  syncBadges();
+  if (state.recognition) state.recognition.lang = sourceLangSel.value;
+});
+targetLangSel.addEventListener('change', syncBadges);
+syncBadges(); // initial paint
+
+// ── SWAP LANGUAGES ────────────────────────────────────────────────────────────
+swapBtn.addEventListener('click', () => {
+  const srcBase = sourceLangSel.value.split('-')[0];
+  const tgtFull = targetLangSel.value;
+
+  const newSrcOpt = [...sourceLangSel.options].find(o => o.value.startsWith(tgtFull));
+  const newTgtOpt = [...targetLangSel.options].find(o => o.value === srcBase);
+
+  if (newSrcOpt) sourceLangSel.value = newSrcOpt.value;
+  if (newTgtOpt) targetLangSel.value = newTgtOpt.value;
+
+  syncBadges();
+  if (state.recognition) state.recognition.lang = sourceLangSel.value;
+});
+
+// ── STATUS ────────────────────────────────────────────────────────────────────
+function setStatus(type, text) {
+  statusPill.className = 'status-pill ' + type;
+  statusText.textContent = text;
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 4500);
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function nowTime() {
+  return new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/**
+ * Append a message bubble to a panel.
+ * @param {HTMLElement} area
+ * @param {string} text
+ * @param {'source'|'translated'|'interim'} type
+ * @returns {HTMLElement} bubble
+ */
+function addMessage(area, text, type) {
+  const empty = area.querySelector('.empty-state');
+  if (empty) empty.style.display = 'none';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble'
+    + (type === 'translated' ? ' translated' : '')
+    + (type === 'interim'    ? ' interim'    : '');
+  bubble.innerHTML = `<div class="msg-text">${escHtml(text)}</div><div class="msg-time">${nowTime()}</div>`;
+  area.appendChild(bubble);
+  area.scrollTop = area.scrollHeight;
+  return bubble;
+}
+
+function updateMessage(el, text) {
+  const t = el.querySelector('.msg-text');
+  if (t) t.textContent = text;
+  el.parentElement.scrollTop = el.parentElement.scrollHeight;
+}
+
+// ── SPEECH RECOGNITION ────────────────────────────────────────────────────────
+function initRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+
+  const rec = new SR();
+  rec.continuous     = true;
+  rec.interimResults = true;
+  rec.lang           = sourceLangSel.value;
+  rec.maxAlternatives = 1;
+
+  rec.onresult = (event) => {
+    let interim = '';
+    let final   = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const r = event.results[i];
+      if (r.isFinal) final   += r[0].transcript.trim() + ' ';
+      else           interim += r[0].transcript;
+    }
+
+    if (interim) {
+      if (!state.interimMsgEl) {
+        state.interimMsgEl = addMessage(transcriptArea, interim, 'interim');
+      } else {
+        updateMessage(state.interimMsgEl, interim);
+      }
+    }
+
+    if (final.trim()) {
+      if (state.interimMsgEl) { state.interimMsgEl.remove(); state.interimMsgEl = null; }
+      addMessage(transcriptArea, final.trim(), 'source');
+      state.wordCount += final.trim().split(/\s+/).length;
+      statWords.textContent = state.wordCount;
+      triggerTranslation(final.trim());
+    }
+  };
+
+  rec.onerror = (e) => {
+    if (e.error === 'not-allowed' || e.error === 'permission-denied') {
+      showToast('⛔ Microphone access denied. Please allow microphone permissions.');
+      setStatus('error', 'Permission denied');
+    } else if (e.error === 'network') {
+      showToast('⚠️ Network error in speech recognition.');
+      setStatus('error', 'Network error');
+    } else if (e.error !== 'no-speech') {
+      showToast(`⚠️ Speech error: ${e.error}`);
+      setStatus('error', 'Recognition error');
+    }
+    stopListening();
+  };
+
+  rec.onstart = () => {
+    setStatus('listening', 'Listening…');
+    transcriptProcessing.classList.add('visible');
+  };
+
+  rec.onend = () => {
+    transcriptProcessing.classList.remove('visible');
+    if (state.isListening) rec.start(); // auto-restart
+  };
+
+  return rec;
+}
+
+// ── MIC TOGGLE ────────────────────────────────────────────────────────────────
+micBtn.addEventListener('click', () => {
+  state.isListening ? stopListening() : startListening();
+});
+
+function startListening() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    showToast('⚠️ Speech Recognition not supported. Use Chrome or Edge.');
+    return;
+  }
+  if (!state.recognition) state.recognition = initRecognition();
+  state.recognition.lang = sourceLangSel.value;
+
+  try {
+    state.recognition.start();
+    state.isListening = true;
+    state.sessions++;
+    statSessions.textContent = state.sessions;
+
+    micBtn.classList.add('active');
+    micWrap.classList.add('active');
+    waveform.classList.add('active');
+    micLabel.textContent = 'Tap to stop';
+    micBtn.textContent = '⏹';
+    setStatus('listening', 'Listening…');
+  } catch (err) {
+    state.recognition = initRecognition();
+    showToast('Could not access microphone: ' + err.message);
+  }
+}
+
+function stopListening() {
+  state.isListening = false;
+  if (state.recognition) state.recognition.stop();
+  if (state.interimMsgEl) { state.interimMsgEl.remove(); state.interimMsgEl = null; }
+
+  micBtn.classList.remove('active');
+  micWrap.classList.remove('active');
+  waveform.classList.remove('active');
+  micLabel.textContent = 'Tap to speak';
+  micBtn.textContent = '🎤';
+  transcriptProcessing.classList.remove('visible');
+  setStatus('ready', 'Ready');
+}
+
+// ── TRANSLATION ───────────────────────────────────────────────────────────────
+async function triggerTranslation(text) {
+  const targetLang = targetLangSel.value;
+  const sourceLang = sourceLangSel.value.split('-')[0];
+
+  setStatus('processing', 'Translating…');
+  translationProcessing.classList.add('visible');
+  const t0 = Date.now();
+
+  try {
+    const res = await fetch(BACKEND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, sourceLang, targetLang }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { translatedText } = await res.json();
+    finishTranslation(translatedText, Date.now() - t0);
+  } catch (err) {
+    console.warn('[Awaz] Backend offline, using mock.', err.message);
+    finishTranslation(mockTranslate(text, targetLang), Date.now() - t0, true);
+  }
+}
+
+function finishTranslation(translated, latencyMs, isMock = false) {
+  translationProcessing.classList.remove('visible');
+  setStatus('ready', 'Translation ready');
+  addMessage(translationArea, translated + (isMock ? ' ✦' : ''), 'translated');
+  if (isMock) showToast('ℹ️ Backend offline — demo translation shown (✦).');
+
+  state.latencies.push(latencyMs);
+  const avg = Math.round(state.latencies.reduce((a,b)=>a+b,0) / state.latencies.length);
+  statLatency.textContent = avg + ' ms';
+
+  state.lastTranslation = translated;
+  playBtn.disabled = false;
+}
+
+// ── MOCK TRANSLATOR ───────────────────────────────────────────────────────────
+const MOCK_PREFIX = {
+  es:'Hola, traducción demo: ', fr:'Bonjour, traduction démo : ',
+  de:'Hallo, Demo-Übersetzung: ', it:'Ciao, traduzione demo: ',
+  pt:'Olá, tradução demo: ', zh:'你好，演示翻译：', ja:'こんにちは、デモ：',
+  ko:'안녕하세요, 데모: ', ar:'مرحبًا، ترجمة تجريبية: ',
+  hi:'नमस्ते, डेमो: ', ru:'Привет, демо: ', ur:'ہیلو، ڈیمو: ',
+  nl:'Hallo, demo: ', sv:'Hej, demo: ', tr:'Merhaba, demo: ',
+  pl:'Cześć, demo: ', id:'Halo, demo: ', bn:'হ্যালো, ডেমো: ',
+  vi:'Xin chào, bản demo: ', th:'สวัสดี ตัวอย่าง: ', en:'Hello, demo: ',
+};
+function mockTranslate(text, lang) {
+  return (MOCK_PREFIX[lang] || MOCK_PREFIX['en']) + text;
+}
+
+// ── TTS WAVEFORM CONTROL ──────────────────────────────────────────────────────
+// Show the amber speaking waveform while SpeechSynthesis is active
+function showTtsWave()  { ttsWaveWrap.classList.add('visible');    setStatus('speaking', 'Speaking…'); }
+function hideTtsWave()  { ttsWaveWrap.classList.remove('visible'); setStatus('ready', 'Ready'); }
+
+// ── AUDIO PLAYBACK ────────────────────────────────────────────────────────────
+playBtn.addEventListener('click', () => {
+  if (state.lastTranslation) speakText(state.lastTranslation, targetLangSel.value);
+});
+
+stopBtn.addEventListener('click', () => {
+  state.synthesis.cancel();
+  hideTtsWave();
+  stopBtn.disabled = true;
+  playBtn.disabled = false;
+  playBtn.textContent = '▶';
+});
+
+/**
+ * Uses SpeechSynthesis to read out text.
+ * Shows the TTS waveform while speaking and hides it when done.
+ * @param {string} text
+ * @param {string} lang  - BCP-47 language tag
+ */
+function speakText(text, lang) {
+  if (!state.synthesis) {
+    showToast('⚠️ Speech synthesis not supported in this browser.');
+    return;
+  }
+  state.synthesis.cancel();
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang   = lang;
+  utter.volume = parseFloat(volumeSlider.value);
+  utter.rate   = parseFloat(speedSlider.value);
+  utter.pitch  = 1;
+
+  utter.onstart = () => {
+    playBtn.disabled  = true;
+    stopBtn.disabled  = false;
+    playBtn.textContent = '▶';
+    showTtsWave();  // ← activate speaking waveform
+  };
+
+  utter.onend = () => {
+    playBtn.disabled  = false;
+    stopBtn.disabled  = true;
+    playBtn.textContent = '▶';
+    hideTtsWave();  // ← deactivate speaking waveform
+  };
+
+  utter.onerror = (e) => {
+    showToast('⚠️ Playback error: ' + e.error);
+    playBtn.disabled = false;
+    stopBtn.disabled = true;
+    hideTtsWave();
+  };
+
+  state.synthesis.speak(utter);
+}
+
+// ── SLIDER FEEDBACK ───────────────────────────────────────────────────────────
+volumeSlider.addEventListener('input', () => {
+  volVal.textContent = Math.round(volumeSlider.value * 100) + '%';
+});
+speedSlider.addEventListener('input', () => {
+  speedVal.textContent = parseFloat(speedSlider.value).toFixed(1) + '×';
+});
+
+// ── KEYBOARD SHORTCUT: Space = toggle mic ─────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space' && !e.repeat) { e.preventDefault(); micBtn.click(); }
+});
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+(function init() {
+  if (window.speechSynthesis) {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+  }
+  setStatus('', 'Ready');
+  console.log('Awaz (آواز) initialized. Press Space or click the mic to start.');
+})();
+</script>
+
+<!-- ─── CHART.JS ─────────────────────────────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+//  SECTION NAVIGATION
+// ══════════════════════════════════════════════════════════════════════════════
+function showSection(id) {
+  document.querySelectorAll('.section-content').forEach(el => el.classList.remove('visible'));
+  document.querySelectorAll('.section-nav-btn').forEach(btn => btn.classList.remove('active'));
+  document.getElementById('section-' + id).classList.add('visible');
+  document.querySelectorAll('.section-nav-btn').forEach(btn => {
+    if (btn.textContent.toLowerCase().includes(id)) btn.classList.add('active');
+  });
+  if (id === 'stats') refreshCharts();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  STATS MODULE
+// ══════════════════════════════════════════════════════════════════════════════
+// Extend the existing `state` object with chart-specific tracking
+const statsData = {
+  sessionsArr:   [],   // words spoken per session
+  langUsage:     {},   // { langCode: count }
+  latencyPoints: [],   // [{x: sessionIdx, y: ms}]
+};
+
+// Intercept finishTranslation to collect chart data
+const _origFinish = window.finishTranslation;
+
+// We patch in after the main script initialises
+function patchStats() {
+  const _orig = finishTranslation;
+  window.finishTranslation = function(translated, latencyMs, isMock) {
+    _orig(translated, latencyMs, isMock);
+    const lang = targetLangSel.value;
+    statsData.langUsage[lang] = (statsData.langUsage[lang] || 0) + 1;
+    statsData.latencyPoints.push({ x: statsData.latencyPoints.length + 1, y: latencyMs });
+    statsData.sessionsArr[state.sessions - 1] = (statsData.sessionsArr[state.sessions - 1] || 0) +
+      (state.wordCount - (statsData._prevWords || 0));
+    statsData._prevWords = state.wordCount;
+    updateSummaryCards();
+    if (document.getElementById('section-stats').classList.contains('visible')) refreshCharts();
+  };
+}
+
+function updateSummaryCards() {
+  document.getElementById('sc-sessions').textContent = state.sessions;
+  document.getElementById('sc-words').textContent = state.wordCount;
+  const avg = state.latencies.length
+    ? Math.round(state.latencies.reduce((a,b)=>a+b,0)/state.latencies.length) + ' ms'
+    : '—';
+  document.getElementById('sc-latency').textContent = avg;
+  if (Object.keys(statsData.langUsage).length) {
+    const top = Object.entries(statsData.langUsage).sort((a,b)=>b[1]-a[1])[0][0];
+    const meta = LANG_META[top];
+    document.getElementById('sc-toplang').textContent = meta ? meta.flag + ' ' + top.toUpperCase() : top.toUpperCase();
+  }
+}
+
+// Chart instances
+let barChartInst = null, pieChartInst = null, scatterChartInst = null;
+
+const CHART_DEFAULTS = {
+  plugins: { legend: { labels: { color: '#8a96b0', font: { family: 'DM Mono', size: 11 } } } },
+  scales: {
+    x: { ticks: { color: '#5a6580', font: { family: 'DM Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+    y: { ticks: { color: '#5a6580', font: { family: 'DM Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+  },
+};
+
+function buildDemoData() {
+  // Seed with demo data if no real data exists yet
+  if (statsData.sessionsArr.length === 0) {
+    statsData.sessionsArr = [12, 7, 18, 5, 22, 15, 9];
+    statsData.langUsage   = { es: 14, fr: 8, de: 5, ja: 4, zh: 3, hi: 6 };
+    statsData.latencyPoints = [220,310,195,410,280,190,340,255,300,230].map((y,x)=>({x:x+1,y}));
+  }
+}
+
+function refreshCharts() {
+  buildDemoData();
+
+  // ── BAR CHART ──────────────────────────────────────────────────────────────
+  const barCtx = document.getElementById('barChart').getContext('2d');
+  const barLabels = statsData.sessionsArr.map((_,i) => 'S' + (i+1));
+  const barData   = statsData.sessionsArr;
+
+  if (barChartInst) barChartInst.destroy();
+  barChartInst = new Chart(barCtx, {
+    type: 'bar',
+    data: {
+      labels: barLabels,
+      datasets: [{
+        label: 'Words',
+        data: barData,
+        backgroundColor: barData.map((_,i) =>
+          `hsla(${180 + i * 15}, 80%, 55%, 0.7)`),
+        borderColor: barData.map((_,i) =>
+          `hsla(${180 + i * 15}, 80%, 65%, 1)`),
+        borderWidth: 1, borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#5a6580', font: { family: 'DM Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#5a6580', font: { family: 'DM Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      }
+    }
+  });
+
+  // ── PIE CHART ──────────────────────────────────────────────────────────────
+  const pieCtx  = document.getElementById('pieChart').getContext('2d');
+  const pieLang = Object.keys(statsData.langUsage);
+  const pieVals = pieLang.map(k => statsData.langUsage[k]);
+  const pieColors = ['#00e5ff','#7b61ff','#00ffa3','#ffb347','#ff6b6b','#38bdf8','#a78bfa','#34d399'];
+
+  if (pieChartInst) pieChartInst.destroy();
+  pieChartInst = new Chart(pieCtx, {
+    type: 'doughnut',
+    data: {
+      labels: pieLang.map(l => (LANG_META[l]?.flag || '') + ' ' + l.toUpperCase()),
+      datasets: [{
+        data: pieVals,
+        backgroundColor: pieColors.slice(0, pieLang.length).map(c => c + 'bb'),
+        borderColor:      pieColors.slice(0, pieLang.length),
+        borderWidth: 2,
+        hoverOffset: 8,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      cutout: '55%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#8a96b0', font: { family: 'DM Mono', size: 10 }, boxWidth: 10, padding: 10 } }
+      }
+    }
+  });
+
+  // ── SCATTER CHART ──────────────────────────────────────────────────────────
+  const scCtx = document.getElementById('scatterChart').getContext('2d');
+  if (scatterChartInst) scatterChartInst.destroy();
+  scatterChartInst = new Chart(scCtx, {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'Latency (ms)',
+        data: statsData.latencyPoints,
+        backgroundColor: 'rgba(0,255,163,0.55)',
+        borderColor: '#00ffa3',
+        pointRadius: 5, pointHoverRadius: 7,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'Translation #', color: '#5a6580', font: { size: 10 } },
+             ticks: { color: '#5a6580', font: { family: 'DM Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { title: { display: true, text: 'ms', color: '#5a6580', font: { size: 10 } },
+             ticks: { color: '#5a6580', font: { family: 'DM Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      }
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  LEARN MODULE
+// ══════════════════════════════════════════════════════════════════════════════
+const LEARN_DATA = {
+  es: {
+    name: 'Spanish', flag: '🇪🇸',
+    lessons: [
+      {
+        title: 'Greetings & Basics', level: 'Beginner',
+        phrases: [
+          { native: 'Hola', roman: 'OH-lah', eng: 'Hello' },
+          { native: 'Buenos días', roman: 'BWEH-nos DEE-as', eng: 'Good morning' },
+          { native: 'Buenas tardes', roman: 'BWEH-nas TAR-des', eng: 'Good afternoon' },
+          { native: 'Buenas noches', roman: 'BWEH-nas NO-ches', eng: 'Good night' },
+          { native: '¿Cómo estás?', roman: 'KOH-mo es-TAS', eng: 'How are you?' },
+          { native: 'Estoy bien', roman: 'es-TOY BYEN', eng: "I'm fine" },
+        ],
+        grammar: 'In Spanish, verbs change based on who is doing the action. "Estoy" means "I am" from the verb "estar" (to be). Spanish has two verbs for "to be": "ser" (permanent) and "estar" (temporary).',
+        table: [['yo', 'I'], ['tú', 'you (informal)'], ['él/ella', 'he/she'], ['nosotros', 'we'], ['ellos', 'they']]
+      },
+      {
+        title: 'Numbers 1–20', level: 'Beginner',
+        phrases: [
+          { native: 'uno, dos, tres', roman: 'OO-no, DOS, TRES', eng: 'one, two, three' },
+          { native: 'cuatro, cinco', roman: 'KWAH-tro, SEEN-ko', eng: 'four, five' },
+          { native: 'seis, siete, ocho', roman: 'SAYS, SYEH-te, OH-cho', eng: 'six, seven, eight' },
+          { native: 'nueve, diez', roman: 'NWEH-be, DYEZ', eng: 'nine, ten' },
+          { native: 'once, doce', roman: 'ON-se, DOH-se', eng: 'eleven, twelve' },
+          { native: 'veinte', roman: 'BAYN-te', eng: 'twenty' },
+        ],
+        grammar: 'Numbers in Spanish are straightforward. After 15 (quince), numbers 16–19 combine "diez" (ten) and the unit: dieciséis (16), diecisiete (17), dieciocho (18), diecinueve (19).',
+        table: [['1 uno','2 dos'],['3 tres','4 cuatro'],['5 cinco','6 seis'],['10 diez','20 veinte']]
+      },
+      {
+        title: 'Common Phrases', level: 'Intermediate',
+        phrases: [
+          { native: '¿Dónde está…?', roman: 'DON-de es-TA', eng: 'Where is…?' },
+          { native: 'No entiendo', roman: 'no en-TYEN-do', eng: "I don't understand" },
+          { native: 'Habla más despacio', roman: 'AH-bla mas des-PA-syo', eng: 'Speak more slowly' },
+          { native: '¿Cuánto cuesta?', roman: 'KWAN-to KWES-ta', eng: 'How much does it cost?' },
+          { native: 'Gracias / De nada', roman: 'GRA-syas / de NA-da', eng: 'Thank you / You\'re welcome' },
+          { native: 'Por favor / Perdón', roman: 'por fa-VOR / per-DON', eng: 'Please / Sorry' },
+        ],
+        grammar: 'Questions in Spanish use inverted punctuation (¿…?) at the start. The verb often comes before the subject in questions: "¿Habla usted inglés?" (Do you speak English?).',
+        table: [['¿Qué?','What?'],['¿Quién?','Who?'],['¿Dónde?','Where?'],['¿Cuándo?','When?'],['¿Cómo?','How?'],['¿Por qué?','Why?']]
+      },
+    ]
+  },
+  fr: {
+    name: 'French', flag: '🇫🇷',
+    lessons: [
+      {
+        title: 'Greetings & Basics', level: 'Beginner',
+        phrases: [
+          { native: 'Bonjour', roman: 'bon-ZHOOR', eng: 'Hello / Good day' },
+          { native: 'Bonsoir', roman: 'bon-SWAHR', eng: 'Good evening' },
+          { native: 'Salut', roman: 'sah-LYU', eng: 'Hi (informal)' },
+          { native: 'Comment allez-vous ?', roman: 'koh-MON ah-LAY VOO', eng: 'How are you? (formal)' },
+          { native: 'Je vais bien', roman: 'zhuh VAY BYAN', eng: "I'm doing well" },
+          { native: 'Au revoir', roman: 'oh ruh-VWAHR', eng: 'Goodbye' },
+        ],
+        grammar: 'French nouns have gender — masculine or feminine — which affects articles and adjectives. "Le" is used for masculine nouns, "La" for feminine. "Les" is used for plural nouns of either gender.',
+        table: [['je','I'],['tu','you (informal)'],['il/elle','he/she'],['nous','we'],['vous','you (formal/plural)'],['ils/elles','they']]
+      },
+      {
+        title: 'Essential Phrases', level: 'Beginner',
+        phrases: [
+          { native: 'S\'il vous plaît', roman: 'seel voo PLAY', eng: 'Please' },
+          { native: 'Merci beaucoup', roman: 'mer-SEE bo-KOO', eng: 'Thank you very much' },
+          { native: 'Je ne comprends pas', roman: 'zhuh nuh kom-PROHN pah', eng: "I don't understand" },
+          { native: 'Parlez-vous anglais ?', roman: 'par-LAY voo ohn-GLAY', eng: 'Do you speak English?' },
+          { native: 'Où est…?', roman: 'oo EH', eng: 'Where is…?' },
+          { native: 'Combien ça coûte ?', roman: 'kom-BYAN sah KOOT', eng: 'How much does it cost?' },
+        ],
+        grammar: 'Negation in French wraps the verb: "Je comprends" (I understand) becomes "Je ne comprends pas" (I do not understand). The "ne" and "pas" surround the verb.',
+        table: [['oui','yes'],['non','no'],['peut-être','maybe'],['bien sûr','of course'],['d\'accord','agreed/OK']]
+      },
+    ]
+  },
+  de: {
+    name: 'German', flag: '🇩🇪',
+    lessons: [
+      {
+        title: 'Greetings & Basics', level: 'Beginner',
+        phrases: [
+          { native: 'Guten Morgen', roman: 'GOO-ten MOR-gen', eng: 'Good morning' },
+          { native: 'Guten Tag', roman: 'GOO-ten TAHK', eng: 'Good day' },
+          { native: 'Guten Abend', roman: 'GOO-ten AH-bent', eng: 'Good evening' },
+          { native: 'Wie geht es Ihnen?', roman: 'vee GAYT es EE-nen', eng: 'How are you? (formal)' },
+          { native: 'Danke schön', roman: 'DAHN-kuh SHURN', eng: 'Thank you very much' },
+          { native: 'Auf Wiedersehen', roman: 'owf VEE-der-zay-en', eng: 'Goodbye' },
+        ],
+        grammar: 'German has three genders: masculine (der), feminine (die), and neuter (das). These change depending on the case (nominative, accusative, dative, genitive). Start with der/die/das and build from there.',
+        table: [['ich','I'],['du','you (informal)'],['er/sie/es','he/she/it'],['wir','we'],['Sie','you (formal)']]
+      },
+    ]
+  },
+  ja: {
+    name: 'Japanese', flag: '🇯🇵',
+    lessons: [
+      {
+        title: 'Greetings & Basics', level: 'Beginner',
+        phrases: [
+          { native: 'おはようございます', roman: 'Ohayou gozaimasu', eng: 'Good morning (formal)' },
+          { native: 'こんにちは', roman: 'Konnichiwa', eng: 'Hello / Good afternoon' },
+          { native: 'こんばんは', roman: 'Konbanwa', eng: 'Good evening' },
+          { native: 'ありがとうございます', roman: 'Arigatou gozaimasu', eng: 'Thank you (formal)' },
+          { native: 'すみません', roman: 'Sumimasen', eng: 'Excuse me / I\'m sorry' },
+          { native: 'はい / いいえ', roman: 'Hai / Iie', eng: 'Yes / No' },
+        ],
+        grammar: 'Japanese sentence structure is Subject–Object–Verb (SOV). Politeness levels are crucial: add "masu" to verbs for polite speech. Particles like "wa" (topic), "ga" (subject), "wo" (object) mark grammatical roles.',
+        table: [['私 (わたし)','I/me'],['あなた','you'],['彼 (かれ)','he'],['彼女 (かのじょ)','she'],['私たち','we']]
+      },
+      {
+        title: 'Hiragana Basics', level: 'Beginner',
+        phrases: [
+          { native: 'あ い う え お', roman: 'a i u e o', eng: 'Vowels — the 5 core sounds' },
+          { native: 'か き く け こ', roman: 'ka ki ku ke ko', eng: 'K-row' },
+          { native: 'さ し す せ そ', roman: 'sa shi su se so', eng: 'S-row' },
+          { native: 'た ち つ て と', roman: 'ta chi tsu te to', eng: 'T-row' },
+          { native: 'な に ぬ ね の', roman: 'na ni nu ne no', eng: 'N-row' },
+          { native: 'は ひ ふ へ ほ', roman: 'ha hi fu he ho', eng: 'H-row' },
+        ],
+        grammar: 'Hiragana is a syllabic alphabet with 46 base characters. Each character represents a syllable (e.g. か = "ka"). Mastering hiragana first is the fastest path into reading and writing Japanese.',
+        table: [['あ','a'],['い','i'],['う','u'],['え','e'],['お','o'],['か','ka'],['き','ki'],['く','ku']]
+      },
+    ]
+  },
+  zh: {
+    name: 'Chinese', flag: '🇨🇳',
+    lessons: [
+      {
+        title: 'Greetings & Basics', level: 'Beginner',
+        phrases: [
+          { native: '你好', roman: 'Nǐ hǎo', eng: 'Hello' },
+          { native: '早上好', roman: 'Zǎoshang hǎo', eng: 'Good morning' },
+          { native: '谢谢', roman: 'Xièxiè', eng: 'Thank you' },
+          { native: '不客气', roman: 'Bù kèqì', eng: "You're welcome" },
+          { native: '对不起', roman: 'Duìbuqǐ', eng: "I'm sorry" },
+          { native: '再见', roman: 'Zàijiàn', eng: 'Goodbye' },
+        ],
+        grammar: 'Mandarin Chinese has no verb conjugations or noun plurals. Meaning relies on word order (SVO) and context. The four tones (plus neutral) are critical: mā (mother), má (hemp), mǎ (horse), mà (scold).',
+        table: [['我','wǒ — I'],['你','nǐ — you'],['他/她','tā — he/she'],['我们','wǒmen — we'],['你们','nǐmen — you (pl)']]
+      },
+    ]
+  },
+  ar: {
+    name: 'Arabic', flag: '🇸🇦',
+    lessons: [
+      {
+        title: 'Greetings & Basics', level: 'Beginner',
+        phrases: [
+          { native: 'السلام عليكم', roman: 'As-salamu alaykum', eng: 'Peace be upon you (Hello)' },
+          { native: 'وعليكم السلام', roman: "Wa alaykum as-salam", eng: 'And upon you peace (reply)' },
+          { native: 'مرحبا', roman: 'Marhaba', eng: 'Hi / Welcome' },
+          { native: 'شكرًا', roman: 'Shukran', eng: 'Thank you' },
+          { native: 'من فضلك', roman: 'Min fadlak', eng: 'Please' },
+          { native: 'مع السلامة', roman: "Ma'a as-salama", eng: 'Goodbye' },
+        ],
+        grammar: 'Arabic is written right-to-left. It has a root-based system where most words share a 3-letter root (e.g. ك-ت-ب k-t-b relates to writing: كَتَبَ kataba = he wrote, كِتَاب kitāb = book).',
+        table: [['أنا','ana — I'],['أنت','anta — you (m)'],['هو','huwa — he'],['هي','hiya — she'],['نحن','nahnu — we']]
+      },
+    ]
+  },
+  hi: {
+    name: 'Hindi', flag: '🇮🇳',
+    lessons: [
+      {
+        title: 'Greetings & Basics', level: 'Beginner',
+        phrases: [
+          { native: 'नमस्ते', roman: 'Namaste', eng: 'Hello / Greetings' },
+          { native: 'आप कैसे हैं?', roman: 'Aap kaise hain?', eng: 'How are you? (formal)' },
+          { native: 'मैं ठीक हूँ', roman: 'Main theek hoon', eng: "I'm fine" },
+          { native: 'धन्यवाद', roman: 'Dhanyavaad', eng: 'Thank you' },
+          { native: 'कृपया', roman: 'Kripaya', eng: 'Please' },
+          { native: 'माफ़ कीजिए', roman: 'Maaf keejiye', eng: 'I\'m sorry / Excuse me' },
+        ],
+        grammar: 'Hindi uses the Devanagari script (46+ characters). Sentence structure is SOV. Verbs agree with the subject\'s gender and number. "Aap" is the formal "you", while "tum" and "tu" are increasingly informal.',
+        table: [['मैं','main — I'],['तुम','tum — you (informal)'],['आप','aap — you (formal)'],['वह','vah — he/she'],['हम','ham — we']]
+      },
+    ]
+  },
+  ur: {
+    name: 'Urdu', flag: '🇵🇰',
+    lessons: [
+      {
+        title: 'Greetings & Basics', level: 'Beginner',
+        phrases: [
+          { native: 'آداب', roman: 'Adaab', eng: 'Greetings / Hello' },
+          { native: 'السلام علیکم', roman: 'Assalamu alaikum', eng: 'Peace be upon you' },
+          { native: 'آپ کیسے ہیں؟', roman: 'Aap kaise hain?', eng: 'How are you?' },
+          { native: 'میں ٹھیک ہوں', roman: 'Main theek hoon', eng: "I'm fine" },
+          { native: 'شکریہ', roman: 'Shukriya', eng: 'Thank you' },
+          { native: 'خدا حافظ', roman: 'Khuda hafiz', eng: 'Goodbye' },
+        ],
+        grammar: 'Urdu is written in Nastaliq script, right-to-left. It shares grammatical structure with Hindi (SOV) but uses Persian–Arabic vocabulary. The script looks flowing and calligraphic. Honorifics are deeply important in Urdu culture.',
+        table: [['میں','main — I'],['آپ','aap — you (formal)'],['تم','tum — you (informal)'],['وہ','voh — he/she'],['ہم','ham — we']]
+      },
+    ]
+  },
+};
+
+let currentLearnLang = 'es';
+let currentLessonIdx = 0;
+const completedLessons = {};  // { 'es:0': true, … }
+
+function selectLearnLang(el) {
+  document.querySelectorAll('.lang-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  currentLearnLang = el.dataset.lang;
+  currentLessonIdx = 0;
+  renderLearn();
+}
+
+function renderLearn() {
+  const data = LEARN_DATA[currentLearnLang];
+  if (!data) return;
+  const lessons = data.lessons;
+
+  // Build sidebar
+  const list = document.getElementById('lessonList');
+  list.innerHTML = '';
+  lessons.forEach((lesson, i) => {
+    const key = currentLearnLang + ':' + i;
+    const done = completedLessons[key];
+    const item = document.createElement('div');
+    item.className = 'lesson-item' + (i === currentLessonIdx ? ' active' : '');
+    item.innerHTML = `
+      <div class="lesson-item-num">${i+1}</div>
+      <div style="flex:1;font-size:0.76rem;">${lesson.title}</div>
+      ${done ? '<div class="lesson-item-done">✓</div>' : ''}
+    `;
+    item.onclick = () => { currentLessonIdx = i; renderLearn(); };
+    list.appendChild(item);
+  });
+
+  // Render main lesson
+  const lesson = lessons[currentLessonIdx];
+  document.getElementById('lessonTitle').textContent = lesson.title;
+  document.getElementById('lessonLevel').textContent = lesson.level;
+
+  // Progress
+  const total = lessons.length;
+  const done  = lessons.filter((_,i) => completedLessons[currentLearnLang + ':' + i]).length;
+  const pct   = Math.round(done / total * 100);
+
+  let html = `
+    <div class="lesson-progress">
+      <span style="font-size:0.6rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;">Progress</span>
+      <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+      <span class="progress-pct">${pct}%</span>
+    </div>
+    <div class="phrase-grid">
+  `;
+  lesson.phrases.forEach(p => {
+    html += `
+      <div class="phrase-card">
+        <div class="phrase-native">${p.native}</div>
+        <div class="phrase-roman">${p.roman}</div>
+        <div class="phrase-eng">${p.eng}</div>
+        <button class="phrase-speak-btn" onclick="speakPhrase('${p.native.replace(/'/g,"\\'")}', '${currentLearnLang}')">🔊 Listen</button>
+      </div>
+    `;
+  });
+  html += `</div>`;
+
+  // Grammar tip
+  html += `
+    <div class="grammar-tip">
+      <div class="grammar-tip-label">💡 Grammar Tip</div>
+      <div class="grammar-tip-text">${lesson.grammar}</div>
+    </div>
+  `;
+
+  // Quick reference table
+  if (lesson.table && lesson.table.length) {
+    html += `
+      <div>
+        <div style="font-size:0.6rem;letter-spacing:2px;text-transform:uppercase;color:var(--muted2);margin-bottom:10px;font-weight:700;">Quick Reference</div>
+        <table class="ref-table">
+          <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+          <tbody>
+    `;
+    lesson.table.forEach(row => {
+      html += `<tr><td>${row[0]}</td><td class="hi">${row[1]}</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+
+  document.getElementById('lessonBody').innerHTML = html;
+
+  // Update prev/next buttons
+  document.getElementById('prevLessonBtn').disabled = currentLessonIdx === 0;
+  document.getElementById('nextLessonBtn').textContent = currentLessonIdx === lessons.length - 1 ? '✓ Complete' : 'Next →';
+}
+
+function navigateLesson(dir) {
+  const data = LEARN_DATA[currentLearnLang];
+  const key = currentLearnLang + ':' + currentLessonIdx;
+  if (dir === 1) {
+    completedLessons[key] = true;
+    if (currentLessonIdx < data.lessons.length - 1) {
+      currentLessonIdx++;
+    }
+  } else if (dir === -1 && currentLessonIdx > 0) {
+    currentLessonIdx--;
+  }
+  renderLearn();
+}
+
+function speakPhrase(text, lang) {
+  if (!window.speechSynthesis) return;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang + '-' + lang.toUpperCase();
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utter);
+}
+
+// ──  INIT STATS + LEARN ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  patchStats();
+  renderLearn();
+  refreshCharts();
+});
+// Fallback if DOMContentLoaded already fired
+if (document.readyState !== 'loading') {
+  patchStats();
+  renderLearn();
+  refreshCharts();
+}
+</script>
+</body>
+</html>
