@@ -1,13 +1,3 @@
-/**
- * security.js — Security & CORS middleware
- *
- * Applies in order:
- *   1. helmet        — sets secure HTTP headers
- *   2. cors          — cross-origin resource sharing
- *   3. rateLimit     — protect against abuse
- *   4. sanitiseBody  — strip unexpected large payloads
- */
-
 'use strict';
 
 const cors       = require('cors');
@@ -16,11 +6,6 @@ const rateLimit  = require('express-rate-limit');
 const config     = require('../config/config');
 const { logger } = require('../utils/logger');
 
-/**
- * Build the CORS options object.
- * If config.allowedOrigins === '*' every origin is allowed.
- * Otherwise only the listed domains are permitted.
- */
 function buildCorsOptions() {
   if (config.allowedOrigins === '*') {
     return {
@@ -32,8 +17,8 @@ function buildCorsOptions() {
 
   return {
     origin(origin, callback) {
-      // Allow requests with no origin (server-to-server, curl, etc.)
       if (!origin) return callback(null, true);
+
       if (config.allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -47,10 +32,6 @@ function buildCorsOptions() {
   };
 }
 
-/**
- * Rate limiter — applied globally.
- * Hits the /translate endpoint heavily? Override per-route in translate.js.
- */
 const limiter = rateLimit({
   windowMs:        config.rateLimit.windowMs,
   max:             config.rateLimit.max,
@@ -66,23 +47,24 @@ const limiter = rateLimit({
   },
 });
 
-/**
- * Apply all security middleware to the Express app.
- * @param {import('express').Application} app
- */
 function securityMiddleware(app) {
-  // Helmet — sensible security headers
+  // Helmet
   app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' }, // needed for web clients
-    contentSecurityPolicy: false, // disable CSP for API (no HTML served)
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false,
   }));
 
-  // Trust proxy headers (needed when behind nginx / Render / Railway / etc.)
+  // Trust proxy
   app.set('trust proxy', 1);
 
-  // CORS
+  // ✅ CORS (this alone is enough)
   app.use(cors(buildCorsOptions()));
-  app.options('*', cors(buildCorsOptions())); // pre-flight for all routes
+
+  // ❌ REMOVE THIS LINE (causing your crash)
+  // app.options('*', cors(buildCorsOptions()));
+
+  // ✅ Optional safe alternative (if needed)
+  // app.options('/*', cors(buildCorsOptions()));
 
   // Rate limiting
   app.use(limiter);
