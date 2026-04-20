@@ -23,6 +23,7 @@ const rateLimit         = require('express-rate-limit');
 const { translateText } = require('../services/translator');
 const { logger }        = require('../utils/logger');
 const config            = require('../config/config');
+const Translation       = require('../models/Translation');
 
 const router = Router();
 
@@ -81,7 +82,20 @@ router.post('/', async (req, res, next) => {
 
   // ── Translate ─────────────────────────────────────────────
   try {
+    const t0 = Date.now();
     const translatedText = await translateText(text.trim(), src, tgt);
+    const latencyMs = Date.now() - t0;
+    
+    // Save to DB asynchronously
+    Translation.create({
+      sourceText: text.trim(),
+      translatedText,
+      sourceLang: src,
+      targetLang: tgt,
+      engine: config.translateEngine,
+      latencyMs
+    }).catch(err => logger.error('[DB] Failed to save translation history:', err.message));
+
     return res.json({ translatedText });
   } catch (err) {
     // Forward to the global error handler

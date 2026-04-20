@@ -811,6 +811,7 @@
   <div class="section-nav" style="margin-top:40px;">
     <button class="section-nav-btn active" onclick="showSection('stats')">📊 Stats</button>
     <button class="section-nav-btn" onclick="showSection('learn')">🎓 Learn</button>
+    <button class="section-nav-btn" onclick="showSection('history')">🕒 History</button>
   </div>
 
   <!-- ─── STATS SECTION ──────────────────────────────────────────────────────── -->
@@ -864,6 +865,26 @@
         <div class="chart-canvas-wrap"><canvas class="chart-canvas" id="scatterChart" height="180"></canvas></div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ─── HISTORY SECTION ────────────────────────────────────────────────────── -->
+  <div class="section-content history-section" id="section-history" style="margin-top:28px;">
+    <div class="learn-header">
+      <div class="learn-header-title" style="background: linear-gradient(90deg, #ffb347, #ff6b6b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Recent Translations</div>
+      <div class="learn-header-sub">View your translation history from the backend database</div>
+    </div>
+    <div class="panel" style="margin-top: 20px;">
+      <div class="panel-header">
+        <span class="panel-title">Translation Log</span>
+        <button class="play-btn" style="width: auto; padding: 0 10px; height: 30px; font-size: 0.7rem;" onclick="fetchHistory()">↻ Refresh</button>
+      </div>
+      <div class="message-area" id="historyArea" style="height: 400px;">
+        <div class="empty-state" id="historyEmpty">
+          <div class="icon">🕒</div>
+          <div>No history available yet.<br/>Start translating to see your logs here.</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1839,17 +1860,60 @@ function speakPhrase(text, lang) {
   window.speechSynthesis.speak(utter);
 }
 
+// ── HISTORY FETCH ─────────────────────────────────────────────────────────────
+async function fetchHistory() {
+  const historyArea = document.getElementById('historyArea');
+  const historyEmpty = document.getElementById('historyEmpty');
+  
+  try {
+    const res = await fetch('http://localhost:3000/history');
+    if (!res.ok) throw new Error('Failed to fetch history');
+    const { data } = await res.json();
+    
+    if (data && data.length > 0) {
+      if (historyEmpty) historyEmpty.style.display = 'none';
+      historyArea.innerHTML = ''; // Clear previous
+      
+      data.forEach(item => {
+        const bubble = document.createElement('div');
+        bubble.className = 'msg-bubble translated';
+        bubble.style.marginBottom = '12px';
+        
+        const date = new Date(item.createdAt).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' });
+        
+        bubble.innerHTML = `
+          <div style="font-size: 0.65rem; color: var(--muted2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px;">
+            ${item.sourceLang.toUpperCase()} → ${item.targetLang.toUpperCase()}
+          </div>
+          <div class="msg-text" style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">${escHtml(item.sourceText)}</div>
+          <div class="msg-text">${escHtml(item.translatedText)}</div>
+          <div class="msg-time" style="display: flex; justify-content: space-between;">
+            <span>${date}</span>
+            <span>${item.latencyMs ? item.latencyMs + 'ms' : ''}</span>
+          </div>
+        `;
+        historyArea.appendChild(bubble);
+      });
+    }
+  } catch (err) {
+    console.warn('[Awaz] Failed to load history:', err.message);
+    showToast('⚠️ Could not load translation history. Is the backend running?');
+  }
+}
+
 // ──  INIT STATS + LEARN ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   patchStats();
   renderLearn();
   refreshCharts();
+  fetchHistory();
 });
 // Fallback if DOMContentLoaded already fired
 if (document.readyState !== 'loading') {
   patchStats();
   renderLearn();
   refreshCharts();
+  fetchHistory();
 }
 </script>
 </body>

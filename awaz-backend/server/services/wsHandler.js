@@ -27,6 +27,8 @@
 
 const { translateText } = require('./translator');
 const { logger }        = require('../utils/logger');
+const config            = require('../config/config');
+const Translation       = require('../models/Translation');
 
 // Keep-alive ping interval in ms
 const PING_INTERVAL = 30_000;
@@ -113,7 +115,18 @@ async function handleTranslate(ws, msg) {
   const t0 = Date.now();
   try {
     const translatedText = await translateText(text, sourceLang, targetLang);
-    send(ws, { type: 'translation', id, translatedText, latencyMs: Date.now() - t0 });
+    const latencyMs = Date.now() - t0;
+    send(ws, { type: 'translation', id, translatedText, latencyMs });
+
+    // Save to DB asynchronously
+    Translation.create({
+      sourceText: text,
+      translatedText,
+      sourceLang,
+      targetLang,
+      engine: config.translateEngine,
+      latencyMs
+    }).catch(err => logger.error('[DB] Failed to save WS translation history:', err.message));
   } catch (err) {
     send(ws, { type: 'error', id, code: err.code || 'TRANSLATION_FAILED', message: err.message });
   }

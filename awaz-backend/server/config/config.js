@@ -15,6 +15,7 @@ const config = {
   // ── Server ──────────────────────────────────────────────
   port: parseInt(process.env.PORT, 10) || 3000,
   env:  process.env.NODE_ENV || 'development',
+  mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/awaz',
 
   // ── Translation Engine ──────────────────────────────────
   // Options: 'libretranslate' | 'google' | 'deepl' | 'openai'

@@ -2,9 +2,11 @@
 
 const http = require('http');
 const express = require('express');
+const path = require('path');
 const { WebSocketServer } = require('ws');
 
 const config = require('./config/config');
+const connectDB = require('./config/db');
 const { logger } = require('./utils/logger');
 const errorHandler = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
@@ -13,6 +15,10 @@ const securityMiddleware = require('./middleware/security');
 const translateRouter = require('./routes/translate');
 const languagesRouter = require('./routes/languages');
 const healthRouter = require('./routes/health');
+const historyRouter = require('./routes/history');
+
+// Initialize MongoDB
+connectDB();
 
 const { handleWsConnection } = require('./services/wsHandler');
 
@@ -31,9 +37,13 @@ app.use(express.urlencoded({ extended: false, limit: '50kb' }));
 
 app.use(requestLogger);
 
+// Serve the frontend static files
+app.use(express.static(path.join(__dirname, '../../Awaz-frontend')));
+
 app.use('/health', healthRouter);
 app.use('/languages', languagesRouter);
 app.use('/translate', translateRouter);
+app.use('/history', historyRouter);
 
 app.use((req, res) => {
   res.status(404).json({
