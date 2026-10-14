@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import TranslatorView from './pages/TranslatorView';
 import HistoryView from './pages/HistoryView';
@@ -8,7 +8,7 @@ import LearnView from './pages/LearnView';
 
 function App() {
   return (
-    <BrowserRouter>
+    <Router>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<TranslatorView />} />
@@ -17,7 +17,7 @@ function App() {
           <Route path="learn" element={<LearnView />} />
         </Route>
       </Routes>
-    </BrowserRouter>
+    </Router>
   );
 }
 
