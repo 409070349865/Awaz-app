@@ -1,0 +1,41 @@
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  margin-left: 292px; /* Sidebar width (260) + gap (32) */
+  padding: 16px 16px 16px 0;
+  min-height: 100vh;
+}
+
+.content-container {
+  height: calc(100vh - 32px);
+  max-width: 1200px;
+  margin: 0 auto;
+  position: relative;
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    margin-bottom: 16px;
+  }
+  
+  .main-content {
+    margin-left: 0;
+    padding: 0 16px 16px;
+  }
+  
+  .content-container {
+    height: auto;
+    min-height: 80vh;
+  }
+}

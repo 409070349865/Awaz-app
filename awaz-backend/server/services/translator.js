@@ -6,6 +6,7 @@ const { logger } = require('../utils/logger');
 // ── Engine adapters ──────────────────────────────────────────
 const engines = {
   libretranslate: require('./engines/libreTranslate'),
+  freegoogle: require('./engines/freegoogle'),
   google: require('./engines/google'),
   deepl: require('./engines/deepl'),
   openai: require('./engines/openai'),

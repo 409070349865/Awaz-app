@@ -18,8 +18,8 @@ const config = {
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/awaz',
 
   // ── Translation Engine ──────────────────────────────────
-  // Options: 'libretranslate' | 'google' | 'deepl' | 'openai'
-  translateEngine: process.env.TRANSLATE_ENGINE || 'libretranslate',
+  // Options: 'libretranslate' | 'google' | 'deepl'  // Translation Engine
+  translateEngine: process.env.TRANSLATE_ENGINE || 'freegoogle',
 
   // ── LibreTranslate (free, self-hostable) ────────────────
   libreTranslate: {

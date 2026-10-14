@@ -38,12 +38,20 @@ app.use(express.urlencoded({ extended: false, limit: '50kb' }));
 app.use(requestLogger);
 
 // Serve the frontend static files
-app.use(express.static(path.join(__dirname, '../../Awaz-frontend')));
+app.use(express.static(path.join(__dirname, '../../Awaz-frontend/dist')));
 
 app.use('/health', healthRouter);
 app.use('/languages', languagesRouter);
 app.use('/translate', translateRouter);
 app.use('/history', historyRouter);
+
+// Catch-all route to serve React index.html for client-side routing
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path === '/health' || req.path === '/translate' || req.path === '/history' || req.path === '/languages') {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, '../../Awaz-frontend/dist/index.html'));
+});
 
 app.use((req, res) => {
   res.status(404).json({

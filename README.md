@@ -69,6 +69,7 @@ Follow these steps to get the full stack running on your local machine.
 4. Start the backend server (starts on `http://localhost:3000`):
    ```bash
    npm run dev
+   
    ```
    *You should see a message confirming the server is running and MongoDB is connected.*
 
